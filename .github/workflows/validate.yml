@@ -24,13 +24,10 @@ jobs:
       - run: bash -n install.sh
       - run: python3 -m unittest discover -s tests -v
   powershell:
-    strategy:
-      matrix:
-        shell: [powershell, pwsh]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - shell: ${{ matrix.shell }}
+      - shell: powershell
         run: |
           $tokens = $null
           $errors = $null
@@ -40,7 +37,9 @@ jobs:
             $errors | Format-List
             exit 1
           }
-      - shell: ${{ matrix.shell }}
+      - shell: powershell
+        run: .\tests\test_windows.ps1
+      - shell: pwsh
         run: .\tests\test_windows.ps1
   pages:
     needs: [lifecycle, powershell]

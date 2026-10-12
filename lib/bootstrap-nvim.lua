@@ -85,12 +85,16 @@ local function language_servers(done)
         warn("Mason has no package named " .. name)
       elseif not package:is_installed() then
         pending = pending + 1
-        package:install():once(
-          "closed",
-          vim.schedule_wrap(function()
-            if not package:is_installed() then
-              local npm = tostring(package.spec.source.id):match "^pkg:npm/" and vim.fn.executable "npm" == 0
-              warn(name .. " was not installed" .. (npm and " (it needs Node.js and npm)" or ""))
+        package:install(
+          {},
+          vim.schedule_wrap(function(success, result)
+            if not success then
+              if tostring(result):find("PLATFORM_UNSUPPORTED", 1, true) then
+                warn(name .. " has no build for this platform")
+              else
+                local npm = tostring(package.spec.source.id):match "^pkg:npm/" and vim.fn.executable "npm" == 0
+                warn(name .. " was not installed" .. (npm and " (it needs Node.js and npm)" or ""))
+              end
             end
             finished()
           end)

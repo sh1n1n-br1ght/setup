@@ -37,8 +37,14 @@ function Get-TreeState([string]$Dir) {
     return @(Get-ChildItem -LiteralPath $base -Recurse -Force | Sort-Object FullName | ForEach-Object {
         $relative = $_.FullName.Substring($base.Length)
         if ($_.PSIsContainer) { "$relative\" } else { "$relative $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }
+    } | Where-Object {
+        # Visual Studio's compiler, which builds the parsers, keeps telemetry here. It belongs
+        # to Visual Studio, and on a real machine this folder exists anyway.
+        -not $_.StartsWith('\Microsoft\')
     })
 }
+
+function Get-Text([string]$File) { return [IO.File]::ReadAllText($File).Replace("`r`n", "`n") }
 
 function Get-RawUserPath {
     $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
@@ -69,7 +75,8 @@ try {
     if (-not $Full) { $arguments.ConfigOnly = $true }
     Invoke-Installer $arguments
     $config = Join-Path $appData 'nvim\init.lua'
-    if ([IO.File]::ReadAllText($config) -ne [IO.File]::ReadAllText((Join-Path $repoDir 'config\nvim\init.lua'))) { Fail 'the Neovim config was not installed' }
+    # Line endings differ between a Windows checkout and the downloaded archive.
+    if ((Get-Text $config) -ne (Get-Text (Join-Path $repoDir 'config\nvim\init.lua'))) { Fail 'the Neovim config was not installed' }
     if (-not (Test-Path -LiteralPath (Join-Path $appData 'devkit\backup\nvim-config\lua\owner.lua'))) { Fail "the owner's config is not in the backup" }
 
     # Reinstalling keeps the backup and moves local edits aside.

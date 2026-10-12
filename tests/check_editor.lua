@@ -23,8 +23,11 @@ if vim.env.DEVKIT_EXPECT ~= "plugins" then
     check(vim.tbl_contains(parsers, language), "parser not installed: " .. language)
   end
   local registry = require "mason-registry"
+  local compiler = require "mason-core.installer.compiler"
   for _, name in ipairs(require("chadrc").mason.pkgs) do
-    check(registry.is_installed(name), "Mason package not installed: " .. name)
+    -- Some tools publish no build for every platform (stylua has none for Windows on Arm).
+    local supported = compiler.parse(registry.get_package(name).spec, {}):err_or_nil() ~= "PLATFORM_UNSUPPORTED"
+    check(not supported or registry.is_installed(name), "Mason package not installed: " .. name)
   end
   check(vim.fn.executable "pyrefly" == 1, "pyrefly is not on PATH")
 end

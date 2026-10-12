@@ -1,0 +1,68 @@
+name: Validate installers
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      full_provision:
+        description: Install and uninstall the full environment on a disposable Linux runner
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  lifecycle:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: bash -n install.sh
+      - run: python3 -m unittest discover -s tests -v
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'install.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) {
+            $errors | Format-List
+            exit 1
+          }
+      - shell: powershell
+        run: .\tests\test_windows.ps1
+  full-provision:
+    if: github.event_name == 'workflow_dispatch' && inputs.full_provision
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: bash install.sh --root "$RUNNER_TEMP/devkit-smoke"
+      - run: |
+          "$HOME/.local/bin/devkit" status
+          "$HOME/.local/bin/devkit" doctor
+          "$HOME/.local/bin/devkit" nvim --headless -i NONE -c 'lua dofile(vim.env.DEVKIT_ENV .. "/source/tests/nvim_completion.lua")'
+      - if: always()
+        run: bash install.sh --root "$RUNNER_TEMP/devkit-smoke" --uninstall
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: devkit-smoke-diagnostics
+          path: |
+            ${{ runner.temp }}/devkit-smoke/**/journal.jsonl
+            ${{ runner.temp }}/devkit-smoke/**/packages.jsonl
+            ${{ runner.temp }}/devkit-smoke/bootstrap-journal.jsonl
+            ${{ runner.temp }}/devkit-smoke/archives/**/package-cleanup-*.json
+            ${{ runner.temp }}/devkit-smoke/archives/**/RESTORE.txt
+          if-no-files-found: ignore

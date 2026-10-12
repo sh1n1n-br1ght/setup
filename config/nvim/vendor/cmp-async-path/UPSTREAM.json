@@ -1,0 +1,12 @@
+{
+  "url": "https://codeberg.org/FelipeLema/cmp-async-path.git",
+  "commit": "98185a91d49ff5dd249aebf2f7456e18063fa2a0",
+  "sha256": {
+    ".editorconfig": "34479179015b0da49c2ff6f08319bdbf4108f26e81b93f5b8f1ac2d57f516155",
+    "LICENSE": "7d760bfad62ca8de6145ff19cad5e0f53840dacebb5af432c6b49ab5c5cb75e7",
+    "README.md": "fb194f12c98400c8ba703772854e01c0f223575430b015db02b83573da0244e6",
+    "lua/cmp_async_path/init.lua": "cf179e210765760cf06ed94730369df226eff512f327065bbef7e2dd5b662974",
+    "lua/utils/luatexts.lua": "7599cfe4fddc295320712e65956302c05c20798822e53aa7413186fa6bb5e0ab",
+    "plugin/cmp_async_path.lua": "5d18b1b7c041d1e9f0341e52bb7b71f9af9fe7d663d4c7303d93aee8ccf8df00"
+  }
+}

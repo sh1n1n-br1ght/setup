@@ -55,6 +55,14 @@ local function plugins()
   end
 end
 
+-- Some tools publish no build for every platform (stylua has none for Windows on Arm).
+local function unsupported(package)
+  local ok, parsed = pcall(function()
+    return require("mason-core.installer.compiler").parse(package.spec, {})
+  end)
+  return ok and parsed:err_or_nil() == "PLATFORM_UNSUPPORTED"
+end
+
 -- Installs the Mason packages listed in chadrc.lua and calls done() when they finish.
 local function language_servers(done)
   local loaded, registry = pcall(function()
@@ -83,18 +91,16 @@ local function language_servers(done)
       local found, package = pcall(registry.get_package, name)
       if not found then
         warn("Mason has no package named " .. name)
+      elseif unsupported(package) then
+        warn(name .. " has no build for this platform")
       elseif not package:is_installed() then
         pending = pending + 1
         package:install(
           {},
-          vim.schedule_wrap(function(success, result)
+          vim.schedule_wrap(function(success)
             if not success then
-              if tostring(result):find("PLATFORM_UNSUPPORTED", 1, true) then
-                warn(name .. " has no build for this platform")
-              else
-                local npm = tostring(package.spec.source.id):match "^pkg:npm/" and vim.fn.executable "npm" == 0
-                warn(name .. " was not installed" .. (npm and " (it needs Node.js and npm)" or ""))
-              end
+              local npm = tostring(package.spec.source.id):match "^pkg:npm/" and vim.fn.executable "npm" == 0
+              warn(name .. " was not installed" .. (npm and " (it needs Node.js and npm)" or ""))
             end
             finished()
           end)

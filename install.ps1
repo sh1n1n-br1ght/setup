@@ -27,6 +27,13 @@ function Quote-PowerShell([string]$Text) { return "'" + $Text.Replace("'", "''")
 function Get-UserVariable([string]$Name) { return [Environment]::GetEnvironmentVariable($Name, 'User') }
 function Set-UserVariable([string]$Name, $Value) { [Environment]::SetEnvironmentVariable($Name, $Value, 'User') }
 function Get-CurrentSid { return [Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    try {
+        $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+        return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } finally { $identity.Dispose() }
+}
 
 function Save-State($State) {
     $State.Updated = [DateTime]::UtcNow.ToString('o')
@@ -267,7 +274,14 @@ function Invoke-ElevatedScript([string]$Body) {
     [IO.File]::WriteAllText($scriptPath, $bodyText, [Text.UTF8Encoding]::new($true))
     $command = '& ' + (Quote-PowerShell $scriptPath)
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-    $process = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) -Verb RunAs -Wait -PassThru
+    $startArguments = @{
+        FilePath = 'powershell.exe'
+        ArgumentList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
+        Wait = $true
+        PassThru = $true
+    }
+    if (-not (Test-IsAdministrator)) { $startArguments.Verb = 'RunAs' }
+    $process = Start-Process @startArguments
     if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resultPath)) { throw "Administrator operation failed. Details and scripts are preserved in $task." }
     return (Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json)
 }
@@ -381,6 +395,10 @@ function Ensure-Scoop($State) {
         if (-not $State.ScoopInstallStarted) { $State.ScoopInstallPathBefore = $beforePath; $State.ScoopInstallStarted = $true; Save-State $State }
         # A subprocess keeps Scoop's `exit` from aborting this recoverable installer.
         $command = '& ' + (Quote-PowerShell $installer) + ' -ScoopDir ' + (Quote-PowerShell $State.ScoopRoot)
+        if (Test-IsAdministrator) {
+            # Scoop can promote inherited global/cache overrides to machine settings when elevated.
+            $command = '$env:SCOOP_GLOBAL = $null; $env:SCOOP_CACHE = $null; ' + $command + ' -RunAsAdmin'
+        }
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
         Invoke-Native 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
         if (-not (Test-Path -LiteralPath $scoopCommand)) { throw 'Scoop did not install successfully.' }
@@ -704,9 +722,6 @@ function Invoke-DevkitMain([hashtable]$Parameters) {
             Write-Host 'Recorded archives are intact.'
             return
         }
-        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-        $principal = [Security.Principal.WindowsPrincipal]::new($identity)
-        if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Start in normal PowerShell. Setup requests elevation for WSL operations separately.' }
         Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
         if ($Action -eq 'Uninstall' -or ($Action -eq 'Recover' -and $state -and $state.Status -in @('uninstalling', 'removed-with-retained-tools'))) {
             if (-not $state -or $state.Status -eq 'removed') { Write-Host 'Already removed; archives are preserved.'; return }

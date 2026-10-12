@@ -14,13 +14,13 @@ Linux/macOS:
 curl -fsSL https://sh1n1n-br1ght.github.io/setup|bash
 ```
 
-Windows, from a normal PowerShell window:
+Windows, from either normal or administrator PowerShell:
 
 ```powershell
 irm https://sh1n1n-br1ght.github.io/setup/w|iex
 ```
 
-PowerShell comes with supported Windows versions; `curl` and Bash come with macOS. Linux needs `curl` and Bash to run its command. There is no downloader guaranteed to exist on every Linux installation, so the tiny command cannot promise zero prerequisites on minimal Linux images. The installer provisions the remaining tools automatically.
+PowerShell comes with supported Windows versions; `curl` and Bash come with macOS. Linux needs `curl` and Bash to run its command. There is no downloader guaranteed to exist on every Linux installation, so the tiny command cannot promise zero prerequisites on minimal Linux images. The installer provisions the remaining tools automatically. On Windows, setup belongs to the account running PowerShell, including when that window is elevated.
 
 From a local checkout, use `bash install.sh` on Linux/macOS or `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` on Windows.
 

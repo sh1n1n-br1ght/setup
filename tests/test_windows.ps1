@@ -341,5 +341,99 @@ Test-Case 'an interrupted uninstall resumes without moving restored owner files'
     Assert-Equal $script:LinuxExports 1
 }
 
+foreach ($adminMode in @($false, $true)) {
+    $script:ExpectedAdmin = $adminMode
+    $modeName = if ($adminMode) { 'administrator' } else { 'ordinary' }
+
+    Test-Case "$modeName entry reaches install and uninstall for the current account" {
+        $state = New-TestState
+        $originalLocalData = $env:LOCALAPPDATA; $originalWindows = $env:WINDIR
+        $testLocalData = Join-Path $script:StateRoot 'current-account'
+        $script:ReachedActions = @()
+        function Test-IsAdministrator { return $script:ExpectedAdmin }
+        function Get-CurrentSid { return ('devkit-test-' + $state.Id) }
+        function Get-State { return $state }
+        function Set-ExecutionPolicy { param($ExecutionPolicy, $Scope, [switch]$Force) }
+        function Update-SourceRequest { return $false }
+        function Invoke-Install {
+            param($State, [switch]$RefreshSource)
+            Assert-Equal $script:StateRoot (Join-Path $testLocalData 'Devkit')
+            $script:ReachedActions += 'install'
+        }
+        function Invoke-Uninstall {
+            param($State)
+            Assert-Equal $script:StateRoot (Join-Path $testLocalData 'Devkit')
+            $script:ReachedActions += 'uninstall'
+        }
+        try {
+            $env:LOCALAPPDATA = $testLocalData; $env:WINDIR = Join-Path $testLocalData 'Windows'
+            $Action = 'Install'; Invoke-DevkitMain @{}
+            $Action = 'Uninstall'; Invoke-DevkitMain @{}
+            Assert-Equal $script:ReachedActions @('install', 'uninstall')
+        } finally { $env:LOCALAPPDATA = $originalLocalData; $env:WINDIR = $originalWindows }
+    }
+
+    Test-Case "$modeName Scoop bootstrap uses the right privilege flag and user directory" {
+        $state = New-TestState
+        $download = Join-Path $script:StateRoot 'scoop-download'
+        [IO.File]::WriteAllText($download, 'mock installer')
+        $originalGlobal = $env:SCOOP_GLOBAL; $originalCache = $env:SCOOP_CACHE
+        function Test-IsAdministrator { return $script:ExpectedAdmin }
+        function Get-Download { return $download }
+        function Get-ScoopApps { return @('7zip', 'git', 'curl', 'zip', 'unzip', 'ripgrep', 'coreutils' | ForEach-Object { New-App $_ }) }
+        function Invoke-Native {
+            param([string]$File, [string[]]$Arguments)
+            Assert-Equal $File 'powershell.exe'
+            $index = [Array]::IndexOf($Arguments, '-EncodedCommand')
+            Assert-True ($index -ge 0)
+            $command = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Arguments[$index + 1]))
+            Assert-Equal ($command -match ' -RunAsAdmin$') $script:ExpectedAdmin
+            Assert-True ($command.Contains(' -ScoopDir ' + (Quote-PowerShell $state.ScoopRoot)))
+            Assert-True (-not $command.Contains('-ScoopGlobalDir'))
+            if ($script:ExpectedAdmin) {
+                Assert-True ($command.StartsWith('$env:SCOOP_GLOBAL = $null; $env:SCOOP_CACHE = $null; '))
+            }
+            $shim = Join-Path $state.ScoopRoot 'shims/scoop.ps1'
+            New-Item -ItemType Directory -Path (Split-Path $shim -Parent) -Force | Out-Null
+            [IO.File]::WriteAllText($shim, 'mock scoop')
+        }
+        try {
+            $env:SCOOP_GLOBAL = 'existing-global-override'; $env:SCOOP_CACHE = 'existing-cache-override'
+            Ensure-Scoop $state
+            Assert-True ($state.ScoopRoot.StartsWith($script:StateRoot))
+            Assert-Equal $env:SCOOP_GLOBAL 'existing-global-override'
+            Assert-Equal $env:SCOOP_CACHE 'existing-cache-override'
+        } finally { $env:SCOOP_GLOBAL = $originalGlobal; $env:SCOOP_CACHE = $originalCache }
+    }
+
+    Test-Case "$modeName privileged helper requests UAC only when needed" {
+        function Test-IsAdministrator { return $script:ExpectedAdmin }
+        function Start-Process {
+            param($FilePath, $ArgumentList, $Verb, [switch]$Wait, [switch]$PassThru)
+            Assert-Equal $FilePath 'powershell.exe'
+            Assert-Equal $PSBoundParameters.ContainsKey('Verb') (-not $script:ExpectedAdmin)
+            if (-not $script:ExpectedAdmin) { Assert-Equal $Verb 'RunAs' }
+            Assert-True $Wait; Assert-True $PassThru
+            $task = @(Get-ChildItem -LiteralPath $script:StateRoot -Directory | Where-Object { $_.Name -like 'admin-*' })
+            Assert-Equal $task.Count 1
+            [IO.File]::WriteAllText((Join-Path $task[0].FullName 'result.json'), '{"ok":true}')
+            return [PSCustomObject]@{ ExitCode = 0 }
+        }
+        Assert-True (Invoke-ElevatedScript '$result = @{ ok = $true }').ok
+    }
+}
+
+if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT -and (Test-IsAdministrator)) {
+    Test-Case 'native administrator helper preserves the current identity and elevation' {
+        $result = Invoke-ElevatedScript @'
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = [Security.Principal.WindowsPrincipal]::new($identity)
+$result = @{ Sid = $identity.User.Value; Elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }
+'@
+        Assert-Equal $result.Sid (Get-CurrentSid)
+        Assert-True $result.Elevated
+    }
+} else { Write-Host 'SKIP native administrator helper probe: requires an already elevated Windows process.' }
+
 Write-Host "$script:Passed passed, $script:Failed failed. Retained fixtures: $script:Fixture"
 if ($script:Failed -gt 0) { exit 1 }

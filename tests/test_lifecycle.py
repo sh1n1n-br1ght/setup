@@ -67,7 +67,8 @@ class LifecycleTests(unittest.TestCase):
         self.make()
         self.install.uninstall()
         self.assertTrue(self.install.launcher.is_symlink())
-        self.assertEqual(self.install.launcher.resolve(), target)
+        self.assertEqual(os.readlink(self.install.launcher), str(target))
+        self.assertEqual(self.install.launcher.resolve(), target.resolve())
         self.assertEqual(target.read_text(), "original command")
 
     def test_replaced_launcher_is_archived_not_lost(self):
@@ -222,7 +223,7 @@ class LifecycleTests(unittest.TestCase):
         self.install = devkit.Installation(proposed, self.user_home)
         envroot = self.make()
         self.assertEqual(self.install.current(), envroot)
-        self.assertEqual(self.install.root, parent / "devkit")
+        self.assertEqual(self.install.root, (parent / "devkit").resolve())
         self.install.uninstall()
 
     def test_competing_roots_cannot_displace_launcher(self):

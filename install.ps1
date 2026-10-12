@@ -165,6 +165,7 @@ function Get-Download([string]$Url, [string]$ExpectedHash = '') {
 }
 
 function Expand-SafeZip([string]$Archive, [string]$Destination) {
+    Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     New-Item -ItemType Directory -Path $Destination | Out-Null
     $base = [IO.Path]::GetFullPath($Destination).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
@@ -511,7 +512,10 @@ for p in os.listdir('/proc'):
     except FileNotFoundError: pass
 print(json.dumps(pids))
 '@
-    $pids = @(Invoke-Wsl @('--distribution', $State.Distribution, '--user', $State.LinuxUser, '--exec', 'python3', '-c', $check) -Capture | ConvertFrom-Json)
+    $decoded = Invoke-Wsl @('--distribution', $State.Distribution, '--user', $State.LinuxUser, '--exec', 'python3', '-c', $check) -Capture | ConvertFrom-Json
+    # Windows PowerShell preserves JSON arrays as one pipeline object; PS7 enumerates them.
+    $pids = @()
+    if ($null -ne $decoded) { $pids = @($decoded) }
     if (@($pids).Count -gt 0) { throw "Close all processes in $($State.Distribution) before uninstalling (PIDs: $($pids -join ', '))." }
 }
 

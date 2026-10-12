@@ -102,6 +102,7 @@ Test-Case 'a failed download is retained and the verified retry is reusable' {
 }
 
 Test-Case 'zip traversal cannot escape the staging directory' {
+    Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $path = Join-Path $script:StateRoot 'bad.zip'
     $zip = [IO.Compression.ZipFile]::Open($path, [IO.Compression.ZipArchiveMode]::Create)
@@ -220,6 +221,16 @@ Test-Case 'empty Linux process output is safe but another process blocks removal
     Assert-NoLinuxProcesses $state
     function Invoke-Wsl { return '[123]' }
     Assert-Throws { Assert-NoLinuxProcesses $state } 'Close all processes'
+}
+
+Test-Case 'Windows PowerShell non-enumerated empty JSON arrays do not block cleanup' {
+    $state = New-TestState
+    function Invoke-Wsl { return '[]' }
+    function ConvertFrom-Json {
+        param([Parameter(ValueFromPipeline = $true)]$InputObject)
+        process { Write-Output -NoEnumerate @() }
+    }
+    Assert-NoLinuxProcesses $state
 }
 
 Test-Case 'PATH cleanup interrupted after its registry write never removes a duplicate twice' {

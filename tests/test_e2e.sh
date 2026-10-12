@@ -14,6 +14,12 @@ BIN=$H/.local/share/devkit/bin
 
 fail() {
 	printf 'FAIL: %s\n' "$*" >&2
+	for log in "$H/.local/share/devkit/state/install.log" "$H/.local/state/nvim/mason.log"; do
+		if [ -f "$log" ]; then
+			printf '\n--- last lines of %s\n' "$log" >&2
+			tail -n 60 "$log" >&2
+		fi
+	done
 	printf 'sandbox kept for inspection: %s\n' "$SANDBOX" >&2
 	exit 1
 }

@@ -183,28 +183,42 @@ function Restore-Target([string]$Name) {
     Write-Note "restored $path"
 }
 
+# The raw user PATH (with %VARIABLES% unexpanded), its registry type and whether it exists.
 function Get-UserPath {
+    $path = @{ Exists = $false; Value = ''; Kind = [Microsoft.Win32.RegistryValueKind]::ExpandString }
     $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
-    if (-not $key) { return '' }
-    try { return [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } finally { $key.Close() }
+    if (-not $key) { return $path }
+    try {
+        if ($key.GetValueNames() -contains 'Path') {
+            $path.Exists = $true
+            $path.Value = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            $path.Kind = $key.GetValueKind('Path')
+        }
+    } finally { $key.Close() }
+    return $path
 }
 
-function Set-UserPath([string]$Value) {
-    # Written as REG_EXPAND_SZ so entries such as %USERPROFILE%\bin keep working.
+function Set-UserPath([string]$Value, $Kind, [switch]$Delete) {
     $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
-    try { $key.SetValue('Path', $Value, [Microsoft.Win32.RegistryValueKind]::ExpandString) } finally { $key.Close() }
+    try {
+        if ($Delete) { $key.DeleteValue('Path', $false) } else { $key.SetValue('Path', $Value, $Kind) }
+    } finally { $key.Close() }
     # Setting any user variable through .NET broadcasts the change to Explorer and new terminals.
     [Environment]::SetEnvironmentVariable('DEVKIT_PATH_CHANGED', '1', 'User')
     [Environment]::SetEnvironmentVariable('DEVKIT_PATH_CHANGED', $null, 'User')
 }
 
+# Entries are added to and removed from the raw value, so everything else in it
+# (order, %VARIABLES%, empty entries, a trailing ';') stays exactly as it was.
 function Add-ToPath([string[]]$Dirs) {
-    $record = Join-Path $script:State 'path-entries'
-    $current = @((Get-UserPath) -split ';' | Where-Object { $_ })
+    $path = Get-UserPath
+    $current = @($path.Value -split ';')
     $added = @($Dirs | Where-Object { $current -notcontains $_ })
     if ($added.Count) {
-        Set-UserPath ((@($added) + $current) -join ';')
-        Add-Content -LiteralPath $record -Value $added -Encoding UTF8
+        $value = ($added -join ';') + $(if ($path.Value) { ';' + $path.Value } else { '' })
+        Set-UserPath $value $path.Kind
+        if (-not $path.Exists) { New-Item -ItemType File -Path (Join-Path $script:State 'path-created') -Force | Out-Null }
+        Add-Content -LiteralPath (Join-Path $script:State 'path-entries') -Value $added -Encoding UTF8
         foreach ($dir in $added) { Write-Note "added $dir to your user PATH" }
     }
     # This PowerShell window can use the commands right away.
@@ -213,16 +227,20 @@ function Add-ToPath([string[]]$Dirs) {
 
 function Remove-FromPath([switch]$Quiet) {
     $record = Join-Path $script:State 'path-entries'
+    $created = Join-Path $script:State 'path-created'
     if (-not (Test-Path -LiteralPath $record)) { return }
     $ours = @(Get-Content -LiteralPath $record -Encoding UTF8 | Where-Object { $_ })
-    $current = @((Get-UserPath) -split ';' | Where-Object { $_ })
-    $kept = @($current | Where-Object { $ours -notcontains $_ })
-    if ($kept.Count -ne $current.Count) {
-        Set-UserPath ($kept -join ';')
+    $path = Get-UserPath
+    $parts = @($path.Value -split ';')
+    $kept = @($parts | Where-Object { $ours -notcontains $_ })
+    if ($path.Exists -and $kept.Count -ne $parts.Count) {
+        $value = $kept -join ';'
+        if (-not $value -and (Test-Path -LiteralPath $created)) { Set-UserPath -Delete } else { Set-UserPath $value $path.Kind }
         if (-not $Quiet) { Write-Note 'removed devkit from your user PATH' }
     }
     $env:Path = (@($env:Path -split ';' | Where-Object { $_ -and $ours -notcontains $_ }) -join ';')
     Remove-Item -LiteralPath $record -Force
+    if (Test-Path -LiteralPath $created) { Remove-Item -LiteralPath $created -Force }
 }
 
 function Write-DevkitCommand {

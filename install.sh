@@ -219,10 +219,15 @@ fetch_tool() {
 	: >"$DIR/.complete"
 }
 
+# exe_in DIR NAME finds an executable in an unpacked download (`find` is missing on
+# some minimal systems, so the known archive layouts are listed instead).
 exe_in() {
-	found=$(find "$1" -path "*/bin/$2" -type f 2>/dev/null | head -n 1)
-	[ -n "$found" ] || found=$(find "$1" -name "$2" -type f 2>/dev/null | head -n 1)
-	printf '%s' "$found"
+	for candidate in "$1/$2" "$1"/*/"$2" "$1"/*/bin/"$2" "$1/bin/$2"; do
+		if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+			printf '%s' "$candidate"
+			return 0
+		fi
+	done
 }
 
 # Old tool versions left behind by updates.
@@ -308,7 +313,9 @@ conda_install() {
 	say "  installing $* from conda-forge into $TOOLS/conda"
 	verb=create
 	if [ -d "$TOOLS/conda/conda-meta" ]; then verb=install; fi
-	MAMBA_ROOT_PREFIX=$TOOLS/mamba "$MAMBA" "$verb" --yes --quiet --no-rc --override-channels \
+	# micromamba also writes to ~/.conda, ~/.mamba and ~/.cache; keep those private too.
+	HOME=$TOOLS/mamba-home XDG_CACHE_HOME=$TOOLS/mamba-home/.cache MAMBA_ROOT_PREFIX=$TOOLS/mamba \
+		"$MAMBA" "$verb" --yes --quiet --no-rc --override-channels \
 		--channel conda-forge --prefix "$TOOLS/conda" "$@" </dev/null >>"$LOG" 2>&1 ||
 		{ warn "conda-forge could not install $*"; return 1; }
 }
@@ -317,7 +324,31 @@ conda_install() {
 need() {
 	have "$1" && return 0
 	pm_install $(pm_name "$1") && have "$1" && return 0
-	[ -n "${2:-}" ] && conda_install "$2" && [ -x "$TOOLS/conda/bin/$1" ] && put "$TOOLS/conda/bin/$1" "$LIBEXEC/$1"
+	[ -n "${2:-}" ] && { [ -x "$TOOLS/conda/bin/$1" ] || conda_install "$2"; } &&
+		[ -x "$TOOLS/conda/bin/$1" ] && put "$TOOLS/conda/bin/$1" "$LIBEXEC/$1"
+}
+
+# zig from conda-forge as `cc`. tree-sitter passes an LLVM-style --target, which zig
+# cannot parse; parsers are always built for this machine, so the shim drops it.
+write_zig_cc() {
+	{
+		printf '#!/bin/sh\n'
+		cat <<'EOF'
+skip=0
+for arg do
+	shift
+	if [ "$skip" = 1 ]; then skip=0; continue; fi
+	case $arg in
+	--target=*) continue ;;
+	-target) skip=1; continue ;;
+	esac
+	set -- "$@" "$arg"
+done
+EOF
+		printf 'ZIG_GLOBAL_CACHE_DIR=%s ZIG_LOCAL_CACHE_DIR=%s\n' "$(quote "$ROOT/cache/zig")" "$(quote "$ROOT/cache/zig")"
+		printf 'export ZIG_GLOBAL_CACHE_DIR ZIG_LOCAL_CACHE_DIR\n'
+		printf 'exec %s cc "$@"\n' "$(quote "$TOOLS/conda/bin/zig")"
+	} >"$LIBEXEC/cc.new" && chmod 755 "$LIBEXEC/cc.new" && mv "$LIBEXEC/cc.new" "$LIBEXEC/cc"
 }
 
 need_cc() {
@@ -328,7 +359,7 @@ need_cc() {
 		fi
 	done
 	pm_install $(pm_name cc) && have cc && return 0
-	conda_install zig && write_script "$LIBEXEC/cc" "exec $(quote "$TOOLS/conda/bin/zig") cc \"\$@\""
+	{ [ -x "$TOOLS/conda/bin/zig" ] || conda_install zig; } && write_zig_cc
 }
 
 macos_command_line_tools() {
@@ -367,7 +398,8 @@ install_tree_sitter() {
 		TS=$DIR/tree-sitter
 	elif ts_ok "$(command -v tree-sitter 2>/dev/null)"; then
 		TS=$(command -v tree-sitter)
-	elif conda_install "tree-sitter-cli=$(lock_version tree-sitter)" && ts_ok "$TOOLS/conda/bin/tree-sitter"; then
+	elif { ts_ok "$TOOLS/conda/bin/tree-sitter" || conda_install "tree-sitter-cli=$(lock_version tree-sitter)"; } &&
+		ts_ok "$TOOLS/conda/bin/tree-sitter"; then
 		TS=$TOOLS/conda/bin/tree-sitter
 	elif pm_install $(pm_name tree-sitter) && ts_ok "$(command -v tree-sitter 2>/dev/null)"; then
 		TS=$(command -v tree-sitter)
@@ -573,7 +605,8 @@ remove_from_path() {
 	if [ -f "$STATE/rc-files" ]; then
 		while IFS=$TAB read -r index file; do
 			[ -f "$file" ] || continue
-			if cmp -s "$file" "$STATE/rc-$index.after"; then
+			# cksum is in every coreutils and busybox; cmp is missing on some minimal systems.
+			if [ "$(cksum <"$file")" = "$(cksum <"$STATE/rc-$index.after")" ]; then
 				cat "$STATE/rc-$index.before" >"$file"
 			elif grep -qF "$BEGIN_MARK" "$file"; then
 				# Edited since install: drop only our block.

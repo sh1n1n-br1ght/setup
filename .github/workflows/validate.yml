@@ -39,6 +39,52 @@ jobs:
           }
       - shell: powershell
         run: .\tests\test_windows.ps1
+  pages:
+    needs: [lifecycle, powershell]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: installer-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - run: python3 tools/build_pages.py _site --revision "$GITHUB_SHA"
+      - run: |
+          bash -n _site/index.html
+          bash -n _site/u
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - uses: actions/deploy-pages@v4
+        id: deployment
+  public-entrypoints:
+    needs: pages
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'https://sh1n1n-br1ght.github.io/setup'
+          foreach ($name in @('w', 'x')) {
+            $body = irm "$base/$name`?v=$env:GITHUB_SHA"
+            if ($body -isnot [string]) { throw "$name must download as a script string" }
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseInput($body, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) { throw "Invalid PowerShell entry point: $name" }
+            $source = [IO.File]::ReadAllText((Join-Path $PWD 'install.ps1')) -replace "`r`n", "`n"
+            if ($name -eq 'x') { $source = $source.Replace("[string]`$Action = 'Install',", "[string]`$Action = 'Uninstall',") }
+            $expected = "& {`n" + $source + "`n}`n"
+            if ($body -cne $expected) { throw "$name does not match this commit" }
+          }
   full-provision:
     if: github.event_name == 'workflow_dispatch' && inputs.full_provision
     runs-on: ubuntu-latest

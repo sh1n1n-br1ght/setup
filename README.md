@@ -6,19 +6,21 @@ The included NvChad configuration contains the Python import-completion fix and 
 
 ## Install
 
-The public repository is `https://github.com/sh1n1n-br1ght/setup`, branch `main`. Installation needs no GitHub login.
+Paste **one command** for your platform. No checkout, GitHub login, or separate setup steps are needed. The commands in later sections are for using or removing an installed environment.
 
 Linux/macOS:
 
 ```bash
-curl -fsSL --retry 3 https://raw.githubusercontent.com/sh1n1n-br1ght/setup/main/install.sh | bash
+curl -fsSL https://sh1n1n-br1ght.github.io/setup|bash
 ```
 
 Windows, from a normal PowerShell window:
 
 ```powershell
-& ([scriptblock]::Create((Invoke-RestMethod 'https://raw.githubusercontent.com/sh1n1n-br1ght/setup/main/install.ps1')))
+irm https://sh1n1n-br1ght.github.io/setup/w|iex
 ```
+
+PowerShell comes with supported Windows versions; `curl` and Bash come with macOS. Linux needs `curl` and Bash to run its command. There is no downloader guaranteed to exist on every Linux installation, so the tiny command cannot promise zero prerequisites on minimal Linux images. The installer provisions the remaining tools automatically.
 
 From a local checkout, use `bash install.sh` on Linux/macOS or `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` on Windows.
 
@@ -49,16 +51,16 @@ The owner's Neovim config, plugin directories, tmux config and shell startup fil
 Finish devkit tmux sessions and exit devkit shells first. From the original shell:
 
 ```bash
-~/.local/bin/devkit uninstall
+curl -fsSL https://sh1n1n-br1ght.github.io/setup/u|bash
 ```
 
 Windows:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Devkit\devkit.ps1" -Action Uninstall
+irm https://sh1n1n-br1ght.github.io/setup/x|iex
 ```
 
-Uninstall deactivates the environment, restores any previous `devkit` launcher, and preserves your configs, projects, modifications, history and downloads in an archive. If someone replaced the launcher while devkit was installed, that replacement is preserved too.
+Uninstall deactivates the environment, restores any previous `devkit` launcher, and preserves your configs, projects, modifications, history and downloads in an archive. If someone replaced the launcher while devkit was installed, that replacement is preserved too. On Linux/macOS, the installed `~/.local/bin/devkit uninstall` command also works without downloading anything.
 
 Prerequisite cleanup is based on recorded ownership. A pre-existing package is never claimed as devkit's. Before removing an owned package, cleanup archives its complete listed file and symlink contents, including modified files; shared system directories are not copied recursively. Homebrew archives also include the complete formula Cellar, untracked files, and its `etc`/`var` data. Changed versions, detected changes during archival, dependencies required elsewhere, ambiguous ownership, unsupported cleanup, and removal scripts or hooks with effects outside the archive cause retention with an explanation. Package versions and archived contents are checked again before removal.
 
@@ -74,7 +76,7 @@ wsl --import Restored-Devkit C:\path\to\new-distro C:\path\to\wsl-archive.tar --
 
 The export is taken after Linux devkit deactivation, so importing it recovers the files and archives rather than activating the old environment. Reinstall devkit to create an active environment, or access the retained files directly.
 
-This restores the managed configuration and launcher; it is not a full-machine snapshot. Package managers and OS installers may also change shared caches, package databases or system components. The cleanup report describes anything retained.
+The archive is not a full-machine snapshot. Package managers and OS installers may also change shared caches, package databases or system components. The cleanup report describes anything retained.
 
 ## Inspect and recover
 

@@ -101,22 +101,23 @@ jobs:
       # On pushes, the full install runs the way `irm ... | iex` does, downloading this commit.
       DEVKIT_TEST_REF: ${{ matrix.piped && github.event_name == 'push' && github.sha || '' }}
       DEVKIT_TEST_REPO: ${{ github.repository }}
+    # `shell:` cannot come from the matrix, so cmd starts the PowerShell under test.
+    defaults:
+      run:
+        shell: cmd
     steps:
       - uses: actions/checkout@v4
       - name: Parse
-        shell: ${{ matrix.shell }}
-        run: |
-          foreach ($file in 'install.ps1', 'tests\test_windows.ps1') {
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path, [ref]$null, [ref]$errors) | Out-Null
-            if ($errors) { $errors | Format-List; exit 1 }
-          }
+        run: >-
+          ${{ matrix.shell }} -NoProfile -Command "foreach ($f in 'install.ps1', 'tests\test_windows.ps1') {
+          $e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f).Path, [ref]$null, [ref]$e);
+          if ($e) { $e | Format-List; exit 1 } }"
       - name: Config round trip
-        shell: ${{ matrix.shell }}
-        run: .\tests\test_windows.ps1 -Ref ''
+        env:
+          DEVKIT_TEST_REF: ''
+        run: ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File tests\test_windows.ps1
       - name: Full install
-        shell: ${{ matrix.shell }}
-        run: .\tests\test_windows.ps1 -Full
+        run: ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File tests\test_windows.ps1 -Full
 
   pages:
     needs: [round-trip, install, distros, no-root, windows]

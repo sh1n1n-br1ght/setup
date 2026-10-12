@@ -19,11 +19,11 @@ def build(output, revision):
     source = Path(__file__).resolve().parent.parent
     shell = (source / "install.sh").read_bytes()
     windows = (source / "install.ps1").read_bytes()
-    shell_entry = b'devkit_bootstrap "$@"\n'
+    shell_entry = b'main "$@"; exit\n'
     if not shell.endswith(shell_entry):
         raise ValueError("The shell entry point must remain the final statement")
     uninstall_shell = replace_once(
-        shell, shell_entry, b'devkit_bootstrap --uninstall "$@"\n', "shell entry point"
+        shell, shell_entry, b'main uninstall "$@"; exit\n', "shell entry point"
     )
     uninstall_windows = replace_once(
         windows,

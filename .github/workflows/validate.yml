@@ -3,46 +3,123 @@ on:
   push:
   pull_request:
   workflow_dispatch:
-    inputs:
-      full_provision:
-        description: Install and uninstall the full environment on a disposable Linux runner
-        type: boolean
-        default: false
 permissions:
   contents: read
 jobs:
-  lifecycle:
+  round-trip:
+    name: config round trip (${{ matrix.os }})
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: bash -n install.sh
-      - run: python3 -m unittest discover -s tests -v
-  powershell:
-    runs-on: windows-latest
+      - name: Backup and restore in every available shell
+        run: |
+          for shell in sh dash bash zsh; do
+            if command -v "$shell" >/dev/null; then
+              "$shell" -n install.sh
+              TEST_SHELL=$shell sh tests/test_install.sh
+            fi
+          done
+
+  install:
+    name: install on ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Ubuntu x86_64, os: ubuntu-latest, piped: true }
+          - { name: Ubuntu arm64, os: ubuntu-24.04-arm }
+          - { name: macOS arm64, os: macos-latest, piped: true }
+          - { name: macOS x86_64, os: macos-15-intel }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      # On pushes, install the way the one-liner does: piped into sh, downloading this commit.
+      DEVKIT_TEST_REF: ${{ matrix.piped && github.event_name == 'push' && github.sha || '' }}
+      DEVKIT_TEST_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
-      - shell: powershell
+      - run: sh tests/test_e2e.sh
+
+  distros:
+    name: install on ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:12-slim # no curl, git or compiler; tree-sitter needs conda-forge
+          - image: ubuntu:20.04 # glibc 2.31: Neovim's builds for old distributions
+          - image: rockylinux:8 # glibc 2.28, dnf
+          - image: fedora:latest
+          - image: archlinux:latest
+          - image: opensuse/tumbleweed
+          - image: alpine:edge # musl and busybox; no tree-sitter CLI build
+            expect: plugins
+    env:
+      DEVKIT_EXPECT: ${{ matrix.expect }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test tools (diff)
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $PWD 'install.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
-          if ($errors.Count) {
-            $errors | Format-List
-            exit 1
+          command -v diff >/dev/null || dnf install -y diffutils || zypper --non-interactive install diffutils || pacman -Sy --noconfirm diffutils
+      - run: sh tests/test_e2e.sh
+
+  no-root:
+    name: install without root, sudo or git (ubuntu:22.04)
+    runs-on: ubuntu-latest
+    container: ubuntu:22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Only curl, as on a fresh server where `curl | sh` runs
+        run: apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+      - name: Install as an ordinary user
+        run: |
+          useradd -m guest
+          cp -R "$GITHUB_WORKSPACE" /home/guest/setup
+          chown -R guest /home/guest/setup
+          su guest -c 'cd ~/setup && sh tests/test_e2e.sh'
+
+  windows:
+    name: Windows ${{ matrix.arch }} (${{ matrix.shell }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, arch: x64, shell: powershell, piped: true }
+          - { os: windows-latest, arch: x64, shell: pwsh }
+          - { os: windows-11-arm, arch: arm64, shell: powershell }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      # On pushes, the full install runs the way `irm ... | iex` does, downloading this commit.
+      DEVKIT_TEST_REF: ${{ matrix.piped && github.event_name == 'push' && github.sha || '' }}
+      DEVKIT_TEST_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse
+        shell: ${{ matrix.shell }}
+        run: |
+          foreach ($file in 'install.ps1', 'tests\test_windows.ps1') {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | Format-List; exit 1 }
           }
-      - shell: powershell
-        run: .\tests\test_windows.ps1
-      - shell: pwsh
-        run: .\tests\test_windows.ps1
+      - name: Config round trip
+        shell: ${{ matrix.shell }}
+        run: .\tests\test_windows.ps1 -Ref ''
+      - name: Full install
+        shell: ${{ matrix.shell }}
+        run: .\tests\test_windows.ps1 -Full
+
   pages:
-    needs: [lifecycle, powershell]
+    needs: [round-trip, install, distros, no-root, windows]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -60,13 +137,15 @@ jobs:
       - uses: actions/configure-pages@v5
       - run: python3 tools/build_pages.py _site --revision "$GITHUB_SHA"
       - run: |
-          bash -n _site/index.html
-          bash -n _site/u
+          sh -n _site/index.html
+          sh -n _site/u
+          tail -n 1 _site/u | grep -qx 'main uninstall "\$@"; exit'
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
       - uses: actions/deploy-pages@v4
         id: deployment
+
   public-entrypoints:
     needs: pages
     runs-on: windows-latest
@@ -87,30 +166,3 @@ jobs:
             $expected = "& {`n" + $source + "`n}`n"
             if ($body -cne $expected) { throw "$name does not match this commit" }
           }
-  full-provision:
-    if: github.event_name == 'workflow_dispatch' && inputs.full_provision
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: bash install.sh --root "$RUNNER_TEMP/devkit-smoke"
-      - run: |
-          "$HOME/.local/bin/devkit" status
-          "$HOME/.local/bin/devkit" doctor
-          "$HOME/.local/bin/devkit" nvim --headless -i NONE -c 'lua dofile(vim.env.DEVKIT_ENV .. "/source/tests/nvim_completion.lua")'
-      - if: always()
-        run: bash install.sh --root "$RUNNER_TEMP/devkit-smoke" --uninstall
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: devkit-smoke-diagnostics
-          path: |
-            ${{ runner.temp }}/devkit-smoke/**/journal.jsonl
-            ${{ runner.temp }}/devkit-smoke/**/packages.jsonl
-            ${{ runner.temp }}/devkit-smoke/bootstrap-journal.jsonl
-            ${{ runner.temp }}/devkit-smoke/archives/**/package-cleanup-*.json
-            ${{ runner.temp }}/devkit-smoke/archives/**/RESTORE.txt
-          if-no-files-found: ignore

@@ -666,6 +666,11 @@ exec $(quote "$NVIM") \"\$@\""
 }
 
 get_source() {
+	# Set when an earlier installer downloaded this source and handed over to it.
+	if [ -n "${DEVKIT_SOURCE_READY:-}" ] && [ -f "$ROOT/source/install.sh" ]; then
+		LOCK=$ROOT/source/tools.lock
+		return 0
+	fi
 	SRC=
 	case $SCRIPT in
 	*/*) here=${SCRIPT%/*} ;;
@@ -696,6 +701,20 @@ get_source() {
 		cp -R "$SRC/install.sh" "$SRC/tools.lock" "$SRC/lib" "$SRC/config" "$ROOT/source.new/" &&
 		remove "$ROOT/source" && mv "$ROOT/source.new" "$ROOT/source" || die "could not copy the setup files into $ROOT"
 	LOCK=$ROOT/source/tools.lock
+	# Continue with the installer that came with this source, so an update runs its new
+	# steps rather than those of the older copy that started it.
+	if [ ! -f "$SCRIPT" ] || [ "$(cksum <"$SCRIPT")" != "$(cksum <"$ROOT/source/install.sh")" ]; then handover; fi
+}
+
+handover() {
+	set -- install --ref "$REF" --repo "$REPO"
+	if [ "$CONFIG_ONLY" = 1 ]; then set -- "$@" --config-only; fi
+	if [ "$NO_SYSTEM" = 1 ]; then set -- "$@" --no-system; fi
+	finish
+	trap - EXIT INT TERM HUP
+	DEVKIT_SOURCE_READY=1 DEVKIT_ROOT=$ROOT
+	export DEVKIT_SOURCE_READY DEVKIT_ROOT
+	exec sh "$ROOT/source/install.sh" "$@"
 }
 
 check_legacy() {
@@ -742,7 +761,7 @@ do_install() {
 	LOG=$STATE/install.log
 	: >"$LOG"
 	detect_pm
-	step "Preparing $REPO ($REF) for $PLATFORM${GLIBC:+, glibc $GLIBC}"
+	if [ -z "${DEVKIT_SOURCE_READY:-}" ]; then step "Preparing $REPO ($REF) for $PLATFORM${GLIBC:+, glibc $GLIBC}"; fi
 	need tar || die "tar is required"
 	need gzip || die "gzip is required"
 	get_source

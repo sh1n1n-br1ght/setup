@@ -269,6 +269,8 @@ function Write-DevkitCommand {
 }
 
 function Get-Source {
+    # Set when an earlier installer downloaded this source and handed over to it.
+    if ($env:DEVKIT_SOURCE_READY -and (Test-Path -LiteralPath (Join-Path $script:SourceCopy 'install.ps1'))) { return }
     $local = $null
     if ($PSScriptRoot -and -not $script:SourceRequested -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'config\nvim\init.lua'))) {
         $local = (Resolve-Path -LiteralPath $PSScriptRoot).Path
@@ -442,8 +444,20 @@ function Invoke-Install {
     }
     $script:Log = Join-Path $script:State 'install.log'
     Set-Content -LiteralPath $script:Log -Value $null
-    Write-Step "Preparing $Repo ($Ref) for $($script:Platform)"
+    if (-not $env:DEVKIT_SOURCE_READY) { Write-Step "Preparing $Repo ($Ref) for $($script:Platform)" }
     Get-Source
+    # Continue with the installer that came with this source, so an update runs its new steps
+    # rather than those of the older copy that started it. A script block runs even where the
+    # execution policy blocks script files, as with irm | iex.
+    $downloaded = Join-Path $script:SourceCopy 'install.ps1'
+    if (-not $env:DEVKIT_SOURCE_READY -and -not ($PSCommandPath -and
+            (Get-FileHash -LiteralPath $PSCommandPath).Hash -eq (Get-FileHash -LiteralPath $downloaded).Hash)) {
+        Remove-Item -LiteralPath $script:Work -Recurse -Force -ErrorAction SilentlyContinue
+        $env:DEVKIT_SOURCE_READY = '1'
+        try { & ([scriptblock]::Create([IO.File]::ReadAllText($downloaded))) -Action Install -Ref $Ref -Repo $Repo -ConfigOnly:$ConfigOnly }
+        finally { Remove-Item Env:DEVKIT_SOURCE_READY -ErrorAction SilentlyContinue }
+        return
+    }
     $script:Lock = @(Read-Lock (Join-Path $script:SourceCopy 'tools.lock'))
     $userDirs = @()
     if (-not $ConfigOnly) { $userDirs = @(Install-Tools) }

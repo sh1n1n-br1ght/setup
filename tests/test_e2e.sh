@@ -65,6 +65,10 @@ if [ -x "$BIN/tmux" ]; then
 	as_owner "$BIN/tmux" -L devkit-test kill-server
 fi
 [ "$(as_owner sh -c '. "$HOME/.profile"; command -v nvim')" = "$BIN/nvim" ] || fail "a login shell does not find devkit's nvim"
+python=$(awk -F '\t' '$1 == "python" { print $2; exit }' "$REPO_DIR/tools.lock")
+[ "$(as_owner sh -c '. "$HOME/.profile"; command -v python3')" = "$BIN/python3" ] || fail "a login shell does not find devkit's python3"
+[ "$(as_owner "$BIN/python3" -c 'import sys; print("%d.%d" % sys.version_info[:2])')" = "$python" ] ||
+	fail "devkit's python3 is not Python $python"
 as_owner "$BIN/devkit" status || fail "status failed"
 
 as_owner "$BIN/devkit" uninstall || fail "uninstall failed"

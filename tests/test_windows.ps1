@@ -89,6 +89,13 @@ try {
         if ((Get-Command nvim).Source -ne $nvim) { Fail "this session does not run devkit's nvim (got $((Get-Command nvim).Source))" }
         if (-not ((Get-RawUserPath) -split ';' -contains (Split-Path -Parent $nvim))) { Fail 'nvim is not on the user PATH' }
         if ((Invoke-Nvim $nvim (Join-Path $repoDir 'tests\check_editor.lua')) -ne 0) { Fail 'editor checks failed' }
+        $pinned = (Get-Content (Join-Path $repoDir 'tools.lock') | Where-Object { $_ -match "^python`t" } | Select-Object -First 1).Split("`t")[1]
+        foreach ($name in 'python', 'python3') {
+            $command = Get-Command $name -ErrorAction SilentlyContinue
+            if (-not $command -or -not $command.Source.StartsWith((Join-Path $appData 'devkit'))) { Fail "$name is not devkit's Python (got $(if ($command) { $command.Source }))"; continue }
+            $version = & $command.Source -c "import sys; print(sys.version_info[0], sys.version_info[1], sep='.')"
+            if ($version -ne $pinned) { Fail "$name is Python $version, expected $pinned" }
+        }
         if ((Invoke-Nvim $nvim (Join-Path $repoDir 'tests\nvim_completion.lua')) -ne 0) { Fail 'Python import completion test failed' }
     }
 

@@ -449,12 +449,31 @@ install_uv() {
 	if [ -x "${UV%/uv}/uvx" ]; then put "${UV%/uv}/uvx" "$BIN/uvx"; fi
 }
 
+# uv with everything it writes kept under $TOOLS.
+uv_private() {
+	UV_TOOL_DIR=$TOOLS/uv-tools UV_TOOL_BIN_DIR=$TOOLS/uv-bin UV_PYTHON_INSTALL_DIR=$TOOLS/python \
+		UV_PYTHON_BIN_DIR=$TOOLS/python-bin UV_CACHE_DIR=$TOOLS/uv-cache UV_NO_CONFIG=1 "$UV" "$@" </dev/null
+}
+
+# The newest Python release of the pinned line that uv knows, from its standalone builds.
+# --no-bin keeps uv from adding commands to ~/.local/bin; the shell gets them from $BIN.
+install_python() {
+	PYTHON=
+	version=$(lock_version python)
+	say "  installing Python $version"
+	uv_private python install --no-bin "$version" >>"$LOG" 2>&1 || return 1
+	PYTHON=$(uv_private python find --managed-python --no-project "$version" 2>>"$LOG") && [ -x "$PYTHON" ] || {
+		PYTHON=
+		return 1
+	}
+	for name in python python3 "python$version"; do put "$PYTHON" "$BIN/$name"; done
+}
+
 install_pyrefly() {
 	version=$(lock_version pyrefly)
 	say "  installing pyrefly $version"
-	UV_TOOL_DIR=$TOOLS/uv-tools UV_TOOL_BIN_DIR=$TOOLS/uv-bin UV_PYTHON_INSTALL_DIR=$TOOLS/python \
-		UV_PYTHON_BIN_DIR=$TOOLS/python-bin UV_CACHE_DIR=$TOOLS/uv-cache UV_NO_CONFIG=1 \
-		"$UV" tool install --force "pyrefly==$version" </dev/null >>"$LOG" 2>&1 &&
+	# Without devkit's Python, uv falls back to the machine's.
+	uv_private tool install --force ${PYTHON:+--python "$PYTHON"} "pyrefly==$version" >>"$LOG" 2>&1 &&
 		[ -x "$TOOLS/uv-bin/pyrefly" ] && put "$TOOLS/uv-bin/pyrefly" "$BIN/pyrefly"
 }
 
@@ -484,9 +503,10 @@ install_tools() {
 	install_tmux || warn "could not install tmux"
 	install_node || warn "no Node.js 18+, so the HTML/CSS language servers are skipped"
 	if install_uv; then
+		install_python || warn "could not install Python $(lock_version python) with uv"
 		install_pyrefly || warn "could not install pyrefly (Python language server)"
 	else
-		warn "could not install uv, so pyrefly (Python language server) is skipped"
+		warn "could not install uv, so Python and pyrefly (Python language server) are skipped"
 	fi
 	install_rg || warn "could not install ripgrep, which Telescope's live grep uses"
 	prune_tools
@@ -790,7 +810,7 @@ do_status() {
 	sed 's/^/  /' "$STATE/installed"
 	for command in "$BIN"/*; do
 		case ${command##*/} in
-		devkit | uvx) ;;
+		devkit | uvx | python3*) ;;
 		tmux) say "  tmux $(version_of "$command" -V)" ;;
 		*) say "  ${command##*/} $(version_of "$command" --version)" ;;
 		esac

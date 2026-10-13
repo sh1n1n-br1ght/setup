@@ -125,6 +125,17 @@ function Invoke-Quiet([string]$File, [string[]]$Arguments) {
     } finally { $ErrorActionPreference = $previous }
 }
 
+# The last line a native command prints, or $null if it fails.
+function Get-Output([string]$File, [string[]]$Arguments) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $lines = @(& $File @Arguments 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $lines.Count) { return ([string]$lines[-1]).Trim() }
+    } finally { $ErrorActionPreference = $previous }
+    return $null
+}
+
 function Get-Version([string]$File) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -335,8 +346,7 @@ function Install-Tools {
     if ($uvDir) {
         $uv = Find-File $uvDir 'uv.exe'
         $userDirs += Split-Path -Parent $uv
-        $pyrefly = Get-Pin 'pyrefly'
-        Write-Note "installing pyrefly $($pyrefly.Version)"
+        # Everything uv writes stays under the tools directory.
         $saved = @{}
         $uvEnv = @{
             UV_TOOL_DIR = Join-Path $script:Tools 'uv-tools'; UV_TOOL_BIN_DIR = Join-Path $script:Tools 'uv-bin'
@@ -344,11 +354,34 @@ function Install-Tools {
             UV_CACHE_DIR = Join-Path $script:Tools 'uv-cache'; UV_NO_CONFIG = '1'
         }
         foreach ($name in $uvEnv.Keys) { $saved[$name] = [Environment]::GetEnvironmentVariable($name); [Environment]::SetEnvironmentVariable($name, $uvEnv[$name]) }
-        try { $code = Invoke-Quiet $uv @('tool', 'install', '--force', "pyrefly==$($pyrefly.Version)") }
-        finally { foreach ($name in $uvEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) } }
+        try {
+            # The newest Python release of the pinned line that uv knows, from its standalone builds.
+            # --no-bin keeps uv from adding commands elsewhere; its folder goes on the user PATH instead.
+            $pythonPin = Get-Pin 'python'
+            Write-Note "installing Python $($pythonPin.Version)"
+            $python = $null
+            if ((Invoke-Quiet $uv @('python', 'install', '--no-bin', $pythonPin.Version)) -eq 0) {
+                $python = Get-Output $uv @('python', 'find', '--managed-python', '--no-project', $pythonPin.Version)
+            }
+            if ($python -and (Test-Path -LiteralPath $python)) {
+                $pythonDir = Split-Path -Parent $python
+                # The build has no python3.exe, and without one the Microsoft Store alias answers instead.
+                $python3 = Join-Path $pythonDir 'python3.exe'
+                if (-not (Test-Path -LiteralPath $python3)) { New-Item -ItemType HardLink -Path $python3 -Value $python | Out-Null }
+                $userDirs += $pythonDir
+            } else {
+                $python = $null
+                Write-Problem "could not install Python $($pythonPin.Version) with uv (see $($script:Log))"
+            }
+            $pyrefly = Get-Pin 'pyrefly'
+            Write-Note "installing pyrefly $($pyrefly.Version)"
+            $toolArguments = @('tool', 'install', '--force')
+            if ($python) { $toolArguments += @('--python', $python) }
+            $code = Invoke-Quiet $uv ($toolArguments + "pyrefly==$($pyrefly.Version)")
+        } finally { foreach ($name in $uvEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) } }
         if ($code -eq 0) { $userDirs += $uvEnv.UV_TOOL_BIN_DIR } else { Write-Problem "could not install pyrefly (see $($script:Log))" }
     } else {
-        Write-Problem 'no uv build for this machine, so pyrefly is skipped'
+        Write-Problem 'no uv build for this machine, so Python and pyrefly are skipped'
     }
 
     if (-not (Test-Compiler)) {

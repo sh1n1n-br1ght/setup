@@ -42,11 +42,11 @@ Uninstall deletes everything the setup added (tools, plugins, its config and the
 
 `XDG_*` variables are respected. Existing files at these paths go to `devkit/backup`. Shell startup files get only the PATH block, and uninstall restores them byte for byte unless they were edited in the meantime, in which case only the block is removed.
 
-The shell gets `nvim`, `tmux`, `uv`, `pyrefly`, `rg` and `devkit`. Helpers that only plugins need (tree-sitter, Node.js, a C compiler) are visible inside Neovim only, so the machine's own versions stay in charge everywhere else.
+The shell gets `nvim`, `tmux`, `python` and `python3`, `uv`, `pyrefly`, `rg` and `devkit`. Helpers that only plugins need (tree-sitter, Node.js, a C compiler) are visible inside Neovim only, so the machine's own versions stay in charge everywhere else.
 
 ## Tools
 
-`tools.lock` pins every download with a SHA-256 checksum: Neovim 0.12.6, tmux 3.7c, tree-sitter CLI 0.27.1, uv 0.13.0 with Pyrefly 1.3.2, ripgrep 15.2.0, plus Node.js 24 and Git for Windows only when the machine has none. `config/nvim/lazy-lock.json` pins the plugins. The small `cmp-async-path` plugin is vendored in `config/nvim/vendor/` (see its `UPSTREAM.json`) so installs do not depend on Codeberg.
+`tools.lock` pins every download with a SHA-256 checksum: Neovim 0.12.6, tmux 3.7c, tree-sitter CLI 0.27.1, uv 0.13.0 with Pyrefly 1.3.2, ripgrep 15.2.0, plus Node.js 24 and Git for Windows only when the machine has none. Python is the newest 3.15 release that the pinned uv knows (3.15.0), installed from uv's standalone builds; it is private to devkit, so the machine's own Python installations are untouched and come back into use after uninstall. `config/nvim/lazy-lock.json` pins the plugins. The small `cmp-async-path` plugin is vendored in `config/nvim/vendor/` (see its `UPSTREAM.json`) so installs do not depend on Codeberg.
 
 ## Unusual machines
 

@@ -30,6 +30,8 @@ uv	0.13.0	macos-x86_64	-	5f44dcbde809b632f47c36fadb241cb4d6f9af71d0c8f172b5d2026
 uv	0.13.0	macos-arm64	-	a9c1b29002cf3c83f07fa9cd8a887a3be0107d90e23189721221e7257db8e3d6	https://github.com/astral-sh/uv/releases/download/0.13.0/uv-aarch64-apple-darwin.tar.gz
 uv	0.13.0	windows-x86_64	-	088962f9e7b7bd9ea740c04c650b2a21c8928c345bd99ac24350dc924dba656c	https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-pc-windows-msvc.zip
 uv	0.13.0	windows-arm64	-	cb54028b59aa87f11cf6dec293ce000420043a49a8aea522e822a671321f8932	https://github.com/astral-sh/uv/releases/download/0.13.0/uv-aarch64-pc-windows-msvc.zip
+# Python comes from uv: the newest release of this line that the pinned uv knows.
+python	3.15	any	-	-	https://docs.python.org/3.15/whatsnew/3.15.html
 pyrefly	1.3.2	any	-	-	https://pypi.org/project/pyrefly/1.3.2/
 ripgrep	15.2.0	linux-x86_64	-	33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c	https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz
 ripgrep	15.2.0	linux-arm64	-	800b1e7206afe799dfb5a6901f23147cfaabe0e52210538100f61e86e1740915	https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-unknown-linux-musl.tar.gz

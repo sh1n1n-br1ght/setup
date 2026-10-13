@@ -60,6 +60,8 @@ if [ "${DEVKIT_EXPECT:-}" != plugins ]; then
 		fail "Python import completion test failed"
 	as_owner "$BIN/nvim" --headless -n -i NONE -c "lua dofile('$REPO_DIR/tests/python_imports.lua')" ||
 		fail "completion in import lists offers more than the module's members"
+	as_owner "$BIN/nvim" --headless -n -i NONE -c "lua dofile('$REPO_DIR/tests/python_indent.lua')" ||
+		fail "Python brackets are not indented like black formats them"
 fi
 if [ -x "$BIN/tmux" ]; then
 	as_owner "$BIN/tmux" -L devkit-test -f "$H/.tmux.conf" new-session -d 'sleep 5' || fail "tmux cannot start a session"

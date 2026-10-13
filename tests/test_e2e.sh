@@ -58,6 +58,8 @@ as_owner "$BIN/nvim" --headless -c "lua dofile('$REPO_DIR/tests/check_editor.lua
 if [ "${DEVKIT_EXPECT:-}" != plugins ]; then
 	as_owner "$BIN/nvim" --headless -i NONE -c "lua dofile('$REPO_DIR/tests/nvim_completion.lua')" ||
 		fail "Python import completion test failed"
+	as_owner "$BIN/nvim" --headless -n -i NONE -c "lua dofile('$REPO_DIR/tests/python_imports.lua')" ||
+		fail "completion in import lists offers more than the module's members"
 fi
 if [ -x "$BIN/tmux" ]; then
 	as_owner "$BIN/tmux" -L devkit-test -f "$H/.tmux.conf" new-session -d 'sleep 5' || fail "tmux cannot start a session"

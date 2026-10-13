@@ -97,6 +97,7 @@ try {
             if ($version -ne $pinned) { Fail "$name is Python $version, expected $pinned" }
         }
         if ((Invoke-Nvim $nvim (Join-Path $repoDir 'tests\nvim_completion.lua')) -ne 0) { Fail 'Python import completion test failed' }
+        if ((Invoke-Nvim $nvim (Join-Path $repoDir 'tests\python_imports.lua')) -ne 0) { Fail "completion in import lists offers more than the module's members" }
     }
 
     & $installer -Action Status

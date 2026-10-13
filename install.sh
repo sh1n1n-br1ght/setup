@@ -680,12 +680,6 @@ get_source() {
 		SRC=$(cd "$here" && pwd -P)
 	fi
 	if [ -z "$SRC" ] || [ "$SRC" = "$(cd "$ROOT/source" 2>/dev/null && pwd -P)" ]; then
-		# `devkit update` follows the repository and ref of the current installation.
-		if [ -n "$SRC" ] && [ "$SOURCE_REQUESTED" = 0 ] && [ -f "$STATE/installed" ]; then
-			REPO=$(sed -n 's/^repo=\([A-Za-z0-9._/-]*\)$/\1/p' "$STATE/installed")
-			REF=$(sed -n 's/^ref=\([A-Za-z0-9._/-]*\)$/\1/p' "$STATE/installed")
-			[ -n "$REPO" ] && [ -n "$REF" ] || die "unreadable $STATE/installed; run the install command again"
-		fi
 		url=https://github.com/$REPO/archive/$REF.tar.gz
 		say "  downloading $url"
 		fetch "$url" "$WORK/source.tar.gz" || die "could not download $url"
@@ -715,6 +709,15 @@ handover() {
 	DEVKIT_SOURCE_READY=1 DEVKIT_ROOT=$ROOT
 	export DEVKIT_SOURCE_READY DEVKIT_ROOT
 	exec sh "$ROOT/source/install.sh" "$@"
+}
+
+# `devkit update` runs the installed copy, which follows the repository and ref it came from.
+follow_installed_ref() {
+	[ "$SOURCE_REQUESTED" = 0 ] && [ -f "$STATE/installed" ] && [ -f "$SCRIPT" ] || return 0
+	[ "$(cd "${SCRIPT%/*}" 2>/dev/null && pwd -P)" = "$(cd "$ROOT/source" 2>/dev/null && pwd -P)" ] || return 0
+	REPO=$(sed -n 's/^repo=\([A-Za-z0-9._/-]*\)$/\1/p' "$STATE/installed")
+	REF=$(sed -n 's/^ref=\([A-Za-z0-9._/-]*\)$/\1/p' "$STATE/installed")
+	[ -n "$REPO" ] && [ -n "$REF" ] || die "unreadable $STATE/installed; run the install command again"
 }
 
 check_legacy() {
@@ -761,6 +764,7 @@ do_install() {
 	LOG=$STATE/install.log
 	: >"$LOG"
 	detect_pm
+	follow_installed_ref
 	if [ -z "${DEVKIT_SOURCE_READY:-}" ]; then step "Preparing $REPO ($REF) for $PLATFORM${GLIBC:+, glibc $GLIBC}"; fi
 	need tar || die "tar is required"
 	need gzip || die "gzip is required"

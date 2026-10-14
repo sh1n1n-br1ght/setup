@@ -14,6 +14,7 @@ for name, plugin in pairs(config.plugins) do
   check(plugin._.installed, "plugin not installed: " .. name)
 end
 check(require("chadrc").base46.theme == "gruvbox_light", "chadrc.lua was not loaded")
+check(vim.o.guicursor:find("block-Cursor", 1, true) ~= nil, "the cursor does not use the theme's Cursor colors")
 check(vim.g.base46_cache and vim.uv.fs_stat(vim.g.base46_cache .. "defaults") ~= nil, "the NvChad theme cache is missing")
 
 if vim.env.DEVKIT_EXPECT ~= "plugins" then
